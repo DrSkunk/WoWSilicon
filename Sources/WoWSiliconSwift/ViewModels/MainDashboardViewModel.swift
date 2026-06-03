@@ -26,6 +26,11 @@ final class MainDashboardViewModel: ObservableObject {
     @Published private(set) var launcherPathStatus: StatusValue = StatusValue(text: "Not set", level: .error)
     @Published private(set) var currentVersionLauncherName: String = "Open Launcher"
     @Published private(set) var isLauncherLoading: Bool = false
+    @Published private(set) var supportsServerManager: Bool = false
+    @Published private(set) var serverPathStatus: StatusValue = StatusValue(text: "Not set", level: .error)
+    @Published private(set) var serverRuntimeStatus: StatusValue = StatusValue(text: "Not configured", level: .warning)
+    @Published private(set) var isServerRunning: Bool = false
+    @Published private(set) var isServerOperationInProgress: Bool = false
     @Published private(set) var shouldShowVanillaTweaksPrompt: Bool = false
     @Published private(set) var shouldShowVersionMismatchPrompt: Bool = false
     @Published private(set) var versionMismatchData: (base: String, tweaked: String)?
@@ -249,6 +254,113 @@ final class MainDashboardViewModel: ObservableObject {
         if panel.runModal() == .OK, let url = panel.url {
             updateCurrentVersion { version in
                 version.crossOverPath = url.path
+            }
+        }
+    }
+
+    func selectServerPath() {
+        let panel = NSOpenPanel()
+        panel.title = "Select Server Folder"
+        panel.prompt = "Choose"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.level = .modalPanel
+        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory())
+
+        if panel.runModal() == .OK, let url = panel.url {
+            updateCurrentVersion { version in
+                version.serverDirectoryPath = url.path
+            }
+        }
+    }
+
+    func installServerSetupFiles() {
+        guard supportsServerManager, let version = versionManager.currentVersion else { return }
+        guard !isServerOperationInProgress else { return }
+
+        isServerOperationInProgress = true
+        patchFeedback = nil
+
+        let serverPath = version.serverDirectoryPath
+        let gamePath = version.gamePath
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try ServerManagerService.installSetupFiles(serverPath: serverPath, gamePath: gamePath)
+                DispatchQueue.main.async {
+                    self.isServerOperationInProgress = false
+                    self.patchFeedback = PatchFeedback(
+                        title: "Server Setup Installed",
+                        message: "Launcher: \(result.launcherPath)\nRealmlist: \(result.realmlistPath)",
+                        isError: false
+                    )
+                    self.refreshServerRuntimeStatus()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isServerOperationInProgress = false
+                    self.patchFeedback = PatchFeedback(
+                        title: "Server Setup Failed",
+                        message: error.localizedDescription,
+                        isError: true
+                    )
+                    self.refreshServerRuntimeStatus()
+                }
+            }
+        }
+    }
+
+    func startServer() {
+        guard supportsServerManager, let version = versionManager.currentVersion else { return }
+        guard !isServerOperationInProgress else { return }
+
+        isServerOperationInProgress = true
+        patchFeedback = nil
+        let serverPath = version.serverDirectoryPath
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                try ServerManagerService.startServer(serverPath: serverPath)
+                DispatchQueue.main.async {
+                    self.isServerOperationInProgress = false
+                    self.patchFeedback = PatchFeedback(title: "Server Started", message: "Server containers were started successfully.", isError: false)
+                    self.refreshServerRuntimeStatus()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isServerOperationInProgress = false
+                    self.patchFeedback = PatchFeedback(title: "Server Start Failed", message: error.localizedDescription, isError: true)
+                    self.refreshServerRuntimeStatus()
+                }
+            }
+        }
+    }
+
+    func stopServer() {
+        guard supportsServerManager, let version = versionManager.currentVersion else { return }
+        guard !isServerOperationInProgress else { return }
+
+        isServerOperationInProgress = true
+        patchFeedback = nil
+        let serverPath = version.serverDirectoryPath
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                try ServerManagerService.stopServer(serverPath: serverPath)
+                DispatchQueue.main.async {
+                    self.isServerOperationInProgress = false
+                    self.patchFeedback = PatchFeedback(title: "Server Stopped", message: "Server containers were stopped successfully.", isError: false)
+                    self.refreshServerRuntimeStatus()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isServerOperationInProgress = false
+                    self.patchFeedback = PatchFeedback(title: "Server Stop Failed", message: error.localizedDescription, isError: true)
+                    self.refreshServerRuntimeStatus()
+                }
             }
         }
     }
@@ -921,6 +1033,10 @@ final class MainDashboardViewModel: ObservableObject {
             currentVersionWantsLauncher = false
             launcherPathStatus = StatusValue(text: "Not set", level: .error)
             currentVersionLauncherName = "Open Launcher"
+            supportsServerManager = false
+            serverPathStatus = StatusValue(text: "Not set", level: .error)
+            serverRuntimeStatus = StatusValue(text: "Not configured", level: .warning)
+            isServerRunning = false
             return
         }
 
@@ -953,11 +1069,46 @@ final class MainDashboardViewModel: ObservableObject {
         currentVersionWantsLauncher = currentVersion.wantsLauncher
         launcherPathStatus = makePathStatus(for: currentVersion.launcherExePath)
         currentVersionLauncherName = "Open Launcher"
+        supportsServerManager = currentVersion.wowVersion == "1.12.1"
+        serverPathStatus = makePathStatus(for: currentVersion.serverDirectoryPath)
+        refreshServerRuntimeStatus()
 
         syncLegacyPrefs(from: currentVersion.settings)
 
         if !isOptionAsAltBusy {
             refreshOptionAsAltStatus()
+        }
+    }
+
+    private func refreshServerRuntimeStatus() {
+        guard supportsServerManager, let version = versionManager.currentVersion else {
+            serverRuntimeStatus = StatusValue(text: "Not configured", level: .warning)
+            isServerRunning = false
+            return
+        }
+
+        let versionID = version.id
+        let serverPath = version.serverDirectoryPath
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let state = ServerManagerService.runtimeState(serverPath: serverPath)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard self.currentVersion?.id == versionID else { return }
+                switch state {
+                case .notConfigured:
+                    self.serverRuntimeStatus = StatusValue(text: "Not configured", level: .warning)
+                    self.isServerRunning = false
+                case .running:
+                    self.serverRuntimeStatus = StatusValue(text: "Running", level: .success)
+                    self.isServerRunning = true
+                case .stopped:
+                    self.serverRuntimeStatus = StatusValue(text: "Stopped", level: .info)
+                    self.isServerRunning = false
+                case .error:
+                    self.serverRuntimeStatus = StatusValue(text: "Unknown", level: .warning)
+                    self.isServerRunning = false
+                }
+            }
         }
     }
 

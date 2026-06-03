@@ -5,7 +5,7 @@ struct StatusValue {
     let level: StatusLevel
 }
 
-enum StatusLevel {
+enum StatusLevel: Equatable {
     case success
     case warning
     case error
