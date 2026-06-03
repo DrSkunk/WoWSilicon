@@ -298,6 +298,7 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
     var settings: VersionSettings
     var launcherExePath: String
     var wantsLauncher: Bool
+    var serverDirectoryPath: String
 
     var hasLauncher: Bool { !launcherExePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -323,7 +324,8 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         optimizationLevel: OptimizationLevel = .low,
         settings: VersionSettings = VersionSettings(),
         launcherExePath: String = "",
-        wantsLauncher: Bool = false
+        wantsLauncher: Bool = false,
+        serverDirectoryPath: String = ""
     ) {
         self.id = id
         self.displayName = displayName
@@ -339,6 +341,7 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         self.settings = settings
         self.launcherExePath = launcherExePath
         self.wantsLauncher = wantsLauncher
+        self.serverDirectoryPath = serverDirectoryPath
     }
 
     enum CodingKeys: String, CodingKey {
@@ -356,6 +359,7 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         case settings
         case launcherExePath = "launcher_exe_path"
         case wantsLauncher = "wants_launcher"
+        case serverDirectoryPath = "server_directory_path"
     }
 
     init(from decoder: Decoder) throws {
@@ -374,6 +378,7 @@ struct GameVersion: Codable, Identifiable, Equatable, Sendable {
         settings = try container.decodeIfPresent(VersionSettings.self, forKey: .settings) ?? VersionSettings()
         launcherExePath = try container.decodeIfPresent(String.self, forKey: .launcherExePath) ?? ""
         wantsLauncher = try container.decodeIfPresent(Bool.self, forKey: .wantsLauncher) ?? false
+        serverDirectoryPath = try container.decodeIfPresent(String.self, forKey: .serverDirectoryPath) ?? ""
     }
 
     mutating func syncCapabilities(with defaults: GameVersion) {

@@ -56,7 +56,16 @@ struct MainDashboardView: View {
                     onUnpatchCrossOver: viewModel.unpatchCrossOver,
                     wantsLauncher: viewModel.currentVersionWantsLauncher,
                     launcherPathStatus: viewModel.launcherPathStatus,
-                    onSelectLauncherPath: viewModel.selectLauncherPath
+                    onSelectLauncherPath: viewModel.selectLauncherPath,
+                    supportsServerManager: viewModel.supportsServerManager,
+                    serverPathStatus: viewModel.serverPathStatus,
+                    serverRuntimeStatus: viewModel.serverRuntimeStatus,
+                    isServerRunning: viewModel.isServerRunning,
+                    isServerOperationInProgress: viewModel.isServerOperationInProgress,
+                    onSelectServerPath: viewModel.selectServerPath,
+                    onInstallServerSetup: viewModel.installServerSetupFiles,
+                    onStartServer: viewModel.startServer,
+                    onStopServer: viewModel.stopServer
                 )
                 .padding(.horizontal, 32)
                 .padding(.vertical, 24)
@@ -357,6 +366,15 @@ struct MainContentView: View {
     let wantsLauncher: Bool
     let launcherPathStatus: StatusValue
     let onSelectLauncherPath: () -> Void
+    let supportsServerManager: Bool
+    let serverPathStatus: StatusValue
+    let serverRuntimeStatus: StatusValue
+    let isServerRunning: Bool
+    let isServerOperationInProgress: Bool
+    let onSelectServerPath: () -> Void
+    let onInstallServerSetup: () -> Void
+    let onStartServer: () -> Void
+    let onStopServer: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -368,6 +386,14 @@ struct MainContentView: View {
                         status: launcherPathStatus,
                         buttonTitle: "Set/Change",
                         action: onSelectLauncherPath
+                    )
+                }
+                if supportsServerManager {
+                    PathRow(
+                        label: "Server Folder:",
+                        status: serverPathStatus,
+                        buttonTitle: "Set/Change",
+                        action: onSelectServerPath
                     )
                 }
                 PathRow(
@@ -409,6 +435,21 @@ struct MainContentView: View {
                     secondaryAction: onUnpatchGame
                 )
             }
+
+            if supportsServerManager {
+                Divider()
+                    .opacity(0.8)
+
+                ServerManagerRow(
+                    status: serverRuntimeStatus,
+                    startDisabled: isServerOperationInProgress || isServerRunning,
+                    stopDisabled: isServerOperationInProgress || !isServerRunning,
+                    installDisabled: isServerOperationInProgress || serverPathStatus.level == .error || gameStatus.level == .error,
+                    onStart: onStartServer,
+                    onStop: onStopServer,
+                    onInstall: onInstallServerSetup
+                )
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
@@ -416,6 +457,41 @@ struct MainContentView: View {
             RoundedRectangle(cornerRadius: 16)
                 .foregroundStyle(.foreground)
                 .opacity(0.04)
+        }
+    }
+}
+
+struct ServerManagerRow: View {
+    let status: StatusValue
+    let startDisabled: Bool
+    let stopDisabled: Bool
+    let installDisabled: Bool
+    let onStart: () -> Void
+    let onStop: () -> Void
+    let onInstall: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("Server:")
+                .frame(width: 150, alignment: .leading)
+
+            StatusLabel(value: status)
+
+            Spacer(minLength: 12)
+
+            HStack(spacing: 8) {
+                Button("Start", action: onStart)
+                    .buttonStyle(.bordered)
+                    .disabled(startDisabled)
+
+                Button("Stop", action: onStop)
+                    .buttonStyle(.bordered)
+                    .disabled(stopDisabled)
+
+                Button("Install Setup Files", action: onInstall)
+                    .buttonStyle(.bordered)
+                    .disabled(installDisabled)
+            }
         }
     }
 }
